@@ -1,0 +1,417 @@
+import seaborn as sns
+sns.set()
+import matplotlib
+matplotlib.rcParams['savefig.dpi'] = 144
+import requests
+import datetime as dt
+from datetime import datetime
+from datetime import date, timedelta
+import pandas as pd
+import collections
+import dill
+from datetime import datetime as dt
+from collections import Counter
+import json
+from bs4 import BeautifulSoup
+import requests
+from requests_futures.sessions import FuturesSession
+import dill
+import re
+import sys
+import spacy
+
+
+url = ""
+social_list=[]
+offset=0
+limit=100
+while True:
+    
+    url = f"https://party/parties?offset={offset}&limit={limit}"
+    print('requesting.. ', url)
+    response=requests.get(url)
+    data=response.json()
+    try:
+        print(data['parties'][0])
+    except:
+        print("No data left to Grab!!, Recording the Data")
+    if len(data['parties']) == 0:
+        break
+    social_list.extend(data['parties'])
+    offset= offset+100
+    
+    party_list_all= social_list
+    
+    so_ex=[]
+for i in data['parties']:
+    so_ex.append(i)
+so_ex=pd.DataFrame(social_list)
+so_ex['date'] = pd.to_datetime(so_ex['date'], format='%Y-%m-%d')
+so_ex.sort_values(by='date', inplace=True)
+
+start=date(2007,2,21)
+end=date(2014,12,1)
+indextill2014= []
+count=0
+for s in so_ex['date']:
+    if (s >= start) & (s <= end):
+        indextill2014.append(count)
+        #print(s)
+    count +=1
+so_ex_filtered=so_ex.iloc[indextill2014]
+so_ex_filtered['date']
+
+Reset_date_of_parties = [d.strftime('%b-%Y') for d in party_list['date']]
+#partylist=Reset_date_of_parties
+party_list['Reset_date_of_parties']=Reset_date_of_parties
+
+def histogram():   
+     return list((Counter(Reset_date_of_parties).items()))
+histogram()
+#[("Dec-2014", 1)] 
+#Counter(Reset_date_of_parties).values()
+#Counter(Reset_date_of_parties)
+m=histogram()
+
+#parse captions
+
+def get_captions(party_name):
+    url= f"https://party-captions.tditrain.com/captions?party={party_name}"
+    caption = requests.get(url)
+    caption = caption.json()
+    #captionlist=pd.DataFrame(captions)
+    return caption
+    
+ nlp = spacy.load("en_core_web_sm")
+with open('raw.pkd', 'rb') as fi:
+    name = dill.load(fi)
+#just splitting
+names_sub=str(name).split(',')
+new_list=[]
+for n in names_sub:
+    n=n.strip()
+    if n.split()[0]=='and':
+        new_n=n.split()
+        del new_n[0]
+        n_temp=' '.join(new_n)
+        if (len(n_temp.split()) == 4) and (n_temp.split()[1] == 'and'):
+            couple=n_temp.split()
+            couple.insert(1,couple[3])
+            n_temp=' '.join(couple)
+        new_list.append(n_temp)
+    else:
+        if (len(n.split()) == 4) and (n.split()[1] == 'and'):
+            couple=n.split()
+            couple.insert(1,couple[3])
+            n=' '.join(couple)        
+        new_list.append(n)
+new_list
+##########
+name['captions']=new_list
+m1=[]
+for i in range(len(name['captions'])):
+    name['captions'][i]=re.sub(r'\,',' & ', name['captions'][i]).split(' & ')
+# Now when there are just two names in a caption with an and
+
+
+#Now just get rid of and before and last name of each caption
+for i in range(len(name['captions'])):
+    name['captions'][i][-1] = re.sub(r'^ and ','',name['captions'][i][0])
+
+n = []
+for caption in name['captions']:
+    n.extend(caption)
+#n[:100]
+mm=[]
+doc=nlp(str(n))
+for ent in doc.ents:
+    mm.append((ent.text, ent.label_))        
+    pure_names1=[n[0] for n in mm if n[1]== "PERSON"]
+    pure_names2=[n[0] for n in mm if n[1]=="WORK_OF_ART"]
+    pure_names3=[n[0] for n in mm if n[1]=="ORG"]
+    pure_names=pure_names1+pure_names2+pure_names3
+    #print(pure_names_strip)
+    pure_names_strip=[' '.join(n.split()) for n in pure_names]
+    pure_names_strip=[' '.join(n.split()) for n in pure_names]
+    #names_page1_formatted = [' '.join(name).encode('utf-8') for name in  names_page1]
+    pure_names_strip = [n for n in pure_names_strip if n!='' ]
+    #m1.append(pure_names_strip)
+    #print(m1)
+zzz=sorted(pure_names_strip,key=lambda x: [x[0]]) 
+mc=zzz
+df=pd.DataFrame(mc)
+df[0] = df[0].str.replace("'","")
+df[0] = df[0].str.replace('\\',"", regex=True)
+df[0] = df[0].str.replace('n',"")
+df[0] = df[0].str.replace(']',"", regex=True)
+df[0] = df[0].str.replace('[',"", regex=True)
+df[0] = df[0].str.strip()
+#df[0].drop_duplicates() 
+#print(list(df[0][:100]))
+
+from collections import Counter
+def histogram1():   
+     return list((Counter(df[0]).keys()))
+histogram1()
+#party_list['name']
+m=sorted(histogram1(),key=lambda x: [x[0]]) 
+
+
+output=[]
+capt12=[]
+for x in party_list['name']:
+    if x not in output:
+        output.append(x)
+        try:
+            caps=get_captions(x)
+        except:
+            time.sleep(2)
+            try:
+                caps=get_captions(x)
+            except:
+                pass
+        capt12.extend(caps['captions'])
+        capt12
+
+raw_captions=capt12
+with open('raw_captions.pkd', 'wb') as fii :
+     dill.dump(raw_captions, fii)
+     
+     
+ #nlp.max_length = 4719161
+#doc = nlp("The sentences we'd like to do lemmatization on", disable = ['ner', 'parser'])
+
+new_list=[]
+
+names_sub=str(new_name).split(',')
+    
+for n in names_sub:
+    n=n.strip()
+    if n.split()[:]=='and':
+        new_n=n.split()
+        del new_n[0]
+        n_temp=' '.join(new_n)
+        if (len(n_temp.split()) == 4) and (n_temp.split()[1] == 'and'):
+            couple=n_temp.split()
+            couple.insert(1,couple[3])
+            n_temp=' '.join(couple)
+        new_list.append(n_temp)
+    else:
+        if (len(n.split()) == 4) and (n.split()[1] == 'and'):
+            couple=n.split()
+            couple.insert(1,couple[3])
+            n=' '.join(couple)        
+        new_list.append(n)
+
+
+for i in range(len(new_list)):
+    new_list[i]=re.sub(r'\,',' & ', new_list[i]).split(' & ')
+# Now when there are just two names in a caption with an and
+
+
+
+#Now just get rid of and before and last name of each caption
+for i in range(len(new_list)):
+    new_list[i][-1] = re.sub(r'^ and ','', new_list[i][0])
+
+ns = []
+for caption in new_list:
+    ns.extend(caption)
+    
+    nlp = spacy.load("en_core_web_sm")
+nlp.max_length = 850000
+zig=[]
+for i in ns:
+    doc1=nlp(str(i))
+    for ent1 in doc1.ents:
+        zig.append((ent1.text, ent1.label_)) 
+        
+ n4=ns[120000:150000]
+zig4=[]
+doc5=nlp(str(n4))
+for ent5 in doc5.ents:
+    zig4.append((ent5.text, ent5.label_))
+
+n5=ns[150000:180000]
+zig5=[]
+doc6=nlp(str(n5))
+for ent6 in doc6.ents:
+    zig5.append((ent6.text, ent6.label_)) 
+
+n6=ns[180000:210826]
+zig6=[]
+doc7=nlp(str(n6))
+for ent7 in doc7.ents:
+    zig6.append((ent7.text, ent7.label_)) 
+
+Tagged_all=zig+zig1+zig2+zig3+zig4+zig5+zig6
+
+
+Tagged_all=zig
+pure_names1_all=[ns[0] for ns in Tagged_all if ns[1]=="PERSON"]
+pure_names2_all=[ns[0] for ns in Tagged_all if ns[1]=="WORK_OF_ART"]
+#pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="DATE"]
+pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="ORG"]
+pure_names4_all=[ns[0] for ns in Tagged_all if ns[1]=="PRODUCT"]
+#pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="WORK OF ART"]
+pure_names5_all=[ns[0] for ns in Tagged_all if ns[1]=="FAC"]
+pure_names6_all=[ns[0] for ns in Tagged_all if ns[1]=="MONEY"]
+pure_names7_all=[ns[0] for ns in Tagged_all if ns[1]=="NORP"]
+pure_names8_all=[ns[0] for ns in Tagged_all if ns[1]=="LAW"]
+pure_names9_all=[ns[0] for ns in Tagged_all if ns[1]=="ORG"]
+#pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="ORG"]
+pure_names10_all=[ns[0] for ns in Tagged_all if ns[1]=="ORDICAL"]
+pure_names11_all=[ns[0] for ns in Tagged_all if ns[1]=="LOC"]
+#pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="ORG"]
+pure_names12_all=[ns[0] for ns in Tagged_all if ns[1]=="CARDINAL"]
+#pure_names3_all=[ns[0] for ns in Tagged_all if ns[1]=="QUANTITY"]
+pure_names_all=pure_names1_all #+pure_names2_all+pure_names3_all+pure_names4_all+pure_names5_all+pure_names6_all+pure_names7_all+pure_names8_all+pure_names9_all+pure_names10_all+pure_names11_all+pure_names12_all
+pure_names_all
+
+
+#pure_names_strip_all=[' '.join(ns.split()) for ns in pure_names_all]
+#pure_names_strip_all=[' '.join(ns.split()) for ns in pure_names_all]
+#pure_names_strip_all = [ns for ns in pure_names_strip_all if ns!='' ]
+#name_sort=sorted(pure_names_strip_all,key=lambda x: [x[0]]) 
+ffsort=pure_names_all
+df1=pd.DataFrame(ffsort)
+df1[0] = df1[0].str.replace("'","")
+df1[0] = df1[0].str.replace('"','')
+df1[0] = df1[0].str.replace('\\',"", regex=True)
+df1[0] = df1[0].str.replace('\/',"", regex=True)
+df1[0] = df1[0].str.replace('n',"")
+df1[0] = df1[0].str.replace(']',"", regex=True)
+df1[0] = df1[0].str.replace('[',"", regex=True)
+#df1[0] = df1[0].str.replace('ttttt',"", regex=True)
+df1[0] = df1[0].str.strip()
+
+pure_names_all=df1.values.tolist()
+#pure_names_strip_all=[' '.join(ns.split()) for ns in pure_names_all]
+#pure_names_strip_all=[' '.join(ns.split()) for ns in pure_names_all]
+pure_names_strip_all = [ns for ns in pure_names_strip_all if ns!='' ]
+#print(list(df1[0][:1000]))
+pure_names_strip_all
+
+
+def histogram2():   
+     return list((Counter(df1[0]).keys()))
+histogram2()
+
+## building graph
+
+import itertools  # itertools.combinations may be useful
+import networkx as nx
+from itertools import combinations
+#G = nx.MultiGraph()
+
+import heapq  # Heaps are efficient structures for tracking the largest
+              # elements in a collection.  Use introspection to find the
+              # function you need.
+
+unique_personas=[]
+G=nx.Graph() #creates an empty graph with no nodes and no edges
+for caption in zig:
+    for index,person in enumerate(caption):
+        if not (person in unique_personas):
+            G.add_node(person)
+            unique_personas.append(person)
+            
+    if len(caption)!=1: #don't account for anything without connections
+        edge_pairs=[]
+        count=0
+        for gind1 in range(0,len(caption)):
+            for gind2 in range(gind1+1,len(caption)):
+                if not G.has_edge(caption[gind1],caption[gind2]):
+                    G.add_edge(caption[gind1],caption[gind2],weight=1)
+                    
+                else:
+                    G.edges[caption[gind1],caption[gind2]]['weight'] += 1
+from operator import itemgetter
+weighed_nodes=sorted(G.degree(weight='weight'),key=itemgetter(1),reverse=True)
+#weighed_edges=sorted(G.edges(data=True),key=itemgetter(2),reverse=True)
+#Degrees=weighed_nodes
+#with open('Degrees.pkd', 'wb') as fdi :
+#     dill.dump(Degrees, fdi)
+
+
+len(weighed_nodes[8:108])
+dfm=pd.DataFrame(weighed_nodes)
+
+
+A=dfm[dfm[0].str.contains('PERSON')==False]         
+B=A[A[0].str.contains('ORG')==False]
+C=B[B[0].str.contains('GPE')==False]
+D=C[C[0].str.contains('PRODUCT')==False]
+E=D[D[0].str.contains('FAC')==False]
+F=E[E[0].str.contains('NORP')==False]
+G=F[F[0].str.contains('EVENT',)==False]
+H=G[G[0].str.contains('LOC')==False]
+I=H[H[0].str.contains('CARDINAL')==False]
+J=I[I[0].str.contains('WORK_OF_ART')==False]
+K=J[J[0].str.contains('DATE')==False]
+
+M=K[K[0].str.contains('MD')==False]
+N=M[M[0].str.contains('PhD')==False]
+O=N[N[0].str.contains('PhD')==False]
+P=O[O[0].str.contains('Mr.')==False]
+Q=P[P[0].str.contains('Mrs.')==False]
+left1=Q[Q[0].str.contains('ORDINAL')==False]
+left2=left1[left1[0].str.contains("\''")==False]
+left3=left2[left2[0].str.contains("Board")==False]
+left4=left3[left3[0].str.contains("TIME")==False]
+#left5=left4.drop(left4[0].index[7],0)
+left4.values.tolist()[:100]
+
+
+#check degree
+import heapq  # Heaps are efficient structures for tracking the largest
+              # elements in a collection.  Use introspection to find the
+              # function you need.
+degree = left4.values.tolist()[:100]#[('Alec Baldwin', 144)] * 100
+
+#check rank
+
+import itertools  # itertools.combinations may be useful
+import networkx as nx
+from itertools import combinations
+
+def pagerank():
+    G = nx.MultiGraph()
+    for page in df1.values.tolist():
+        for caption in page:
+            connections = list(combinations(caption,2))
+            G.add_edges_from(list(combinations(caption,2)))
+        
+    H = nx.Graph()
+    for u,v,w in G.edges(data=True):
+        if H.has_edge(u,v):
+            H[u][v]['weight'] += 1
+        else:
+            H.add_edge(u,v,weight=1)
+    ranks = nx.pagerank(H)
+    A = sorted(ranks.items(), key = lambda x: -x[1])[:100]
+    perfect_rank = []   
+    for i in range(100):
+        perfect_rank.append(A[i])
+    return perfect_rank
+    
+    weighed_edges=sorted(G.edges(data=True),key=itemgetter(2),reverse=True)
+q3_ans=weighed_edges[0:100]
+
+G = nx.MultiGraph()
+for page in str(setthisway):
+    for caption in page:
+        connections = list(combinations(caption,2))
+        G.add_edges_from(list(combinations(caption,2)))
+
+H = nx.Graph()
+for u,v,w in G.edges(data=True):
+    if H.has_edge(u,v):
+        H[u][v]['weight'] += 1
+    else:
+        H.add_edge(u,v,weight=1)
+pagerank = ranks[:100]#[('Martha Stewart', 0.00019312108706213307)] * 100
+
+
+
+    
