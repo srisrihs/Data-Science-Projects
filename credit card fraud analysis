@@ -1,0 +1,246 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+
+data = pd.read_csv("Data_Detailed/frauddata_detailed.csv")
+
+data.columns
+
+data.head(5)
+
+data.tail(5)
+
+data.info()
+
+#Lets see if there are wrong or no values
+
+data.isnull()
+
+data.isnull().info() #sum()
+
+# lets check what we should keep and what is not necessary in this exploratory analysis
+
+data_df=data.drop("trans_num",1)
+
+## now check credit card transactions details and similar kind of transactions
+
+data['cc_num']
+
+data['cc_num'].value_counts()
+
+#what is last column??
+
+
+data['last'],data['first']
+
+## Last and first columns are first and last name of customers, therefore these are not requiredin our exploratory analysis
+
+data_df=data.drop(columns=['first', 'last','trans_num'])
+
+data_df.columns
+
+#lets do some exploratory analysis on time
+
+data['unix_time']
+
+# this is number not clear so we need to look and do some digging
+
+#let's compare transactions and time, and see correlations!!
+
+data[['cc_num', 'unix_time']]
+
+data[['cc_num', 'unix_time']]
+
+#we see that 
+data[['cc_num', 'unix_time']].diff
+
+data['update_of_trans']=data.groupby(by='cc_num')['unix_time'].diff()
+
+data['update_of_trans']
+
+data['update_of_trans'].isnull()
+
+data['update_of_trans'].isnull().sum()
+
+### ??? why is that?? need to answer this to move ahead!!
+
+##let look update_transsaction has null values that means there were same transactions not multiple times
+
+## so 983 values we are getting by removing null is update in cc_trans.
+
+## that means no use of it for now!
+
+### We can come back to it if something comes up!
+
+
+
+
+
+#date and time column
+
+data['trans_date_trans_time']
+
+data['trans_date_trans_time']=pd.to_datetime(data['trans_date_trans_time'])
+
+data["Time"] = pd.to_datetime(data["trans_date_trans_time"],"%H:%M").dt.time
+
+data['trans_date_trans_time']
+
+data["Time"] = pd.to_datetime(data["trans_date_trans_time"]).dt.hour
+
+#city_population on the basis of population count
+data.loc[(data["city_pop"]<10000),["city_pop_segment"]] = "sparse Populatin"
+data.loc[((data["city_pop"]>10000) & (data["city_pop"]<50000)),["city_pop_segment"]] = "More population"
+data.loc[(data["city_pop"]>50000),["city_pop_segment"]] = "Dense population"
+
+data.update_of_trans.apply(lambda x: float((x/60)/60))
+
+data.loc[(data["update_of_trans"]<1),["recency_segment"]] = "Recent_Transaction"
+data.loc[((data["update_of_trans"]>1) & (data["update_of_trans"]<6)),["recency_segment"]] = "Within 6 hours"
+data.loc[((data["update_of_trans"]>6) & (data["update_of_trans"]<12)),["recency_segment"]] = "After 6 hours"
+data.loc[((data["update_of_trans"]>12) & (data["update_of_trans"]<24)),["recency_segment"]] = "After Half-Day"
+data.loc[(data["update_of_trans"]>24),["recency_segment"]] = "After 24 hours"
+data.loc[(data["update_of_trans"]<0),["recency_segment"]] = "First Transaction"
+data.recency_segment.value_counts(normalize = True)
+
+data.city_pop_segment.value_counts(normalize = True)
+
+data.info()
+
+data_df=data.drop(columns=['first','last','Unnamed: 0','dob','trans_num'])
+
+data_df.info()
+
+data[['lat','long','merch_long','merch_lat']]
+
+#this is benefecial as we can locate transaction and how far fraud transactions are from the normal transaction area.
+
+data['lat_tran_diff']=abs(data.lat - data.merch_lat)
+data['long_tran_diff']=abs(data.long - data.merch_long)
+
+data_df['lat_tran_diff']=abs(data.lat - data.merch_lat)
+data_df['long_tran_diff']=abs(data.long - data.merch_long)
+
+data[['lat_tran_diff','long_tran_diff']]
+
+np.sqrt(69)
+
+## by theory each degree represent radius of 8.3miles
+
+## that means a degree difference is a distance approximately 69 miles from the card holder
+
+data['distance_trans']= np.sqrt(pow(data['lat_tran_diff']*69, 2) + pow((data['long_tran_diff']*69), 2))
+
+data_df['distance_trans']= np.sqrt(pow(data['lat_tran_diff']*69, 2) + pow((data['long_tran_diff']*69), 2))
+
+data['distance_trans']
+
+## Now we have transaction distances then we can difurcate the transactions anf group them by distance
+
+## normally people don't shop far away in abrupt pattern, and mostly cities are 25mile square.
+
+data.loc[(data['distance_trans']<25)]
+
+data.loc[(data['distance_trans']<25),['location']]= 'Near_trans'
+
+data['location']
+
+#now above 25 and below 65 is far and above 65 is far
+
+data.loc[((data["distance_trans"]>25) & (data["distance_trans"]<65)),["location"]] = "Far_trans"
+data.loc[(data["distance_trans"]>65),["location"]] = "Very_Far_trans"
+
+data.location.value_counts()
+
+#lets normalize this so that we can handle them
+
+data.location.value_counts(normalize=True)
+
+# Now we have analysis of time and location we can categorize transaction every
+
+data.category.value_counts()
+
+data.merchant.value_counts()
+
+df=data.drop('trans_date_trans_time',axis=1)
+X=df.drop(['cc_num','is_fraud'], axis=1)
+y=df['is_fraud']
+
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, stratify = y, random_state=42)
+
+# before finishing making model, lets do some more digging
+
+fraud_stat=data[data['is_fraud']==1]
+
+#lets plot at what time these frauds happen
+
+sns.kdeplot(fraud_stat['Time'])
+plt.xlim(left=-10, right=35)
+
+sns.kdeplot(fraud_stat.trans_date_trans_time)
+plt.xticks()
+
+sns.countplot(fraud_stat["city_pop_segment"])
+
+plt.figure(figsize = [5,20])
+sns.countplot(y=fraud_stat.state)
+
+#lets see updated_trans segmented hour based fraud
+
+sns.countplot(y=fraud_stat.recency_segment)
+
+## above result is not giving full information
+
+sns.countplot(y=fraud_stat.category)
+
+# checking fraud_peak hours in grocery_pos and shopping_net categories
+plt.figure(figsize=[12,6])
+plt.subplot(121)
+sns.kdeplot(x=fraud_stat[fraud_stat.category == "grocery_pos"].Time)
+plt.xlim(left=0,right=45)
+plt.title(label = "In person Transactions Frauds", fontdict = {"color": "Red", "size": 15, "weight" : "5"})
+plt.subplot(122)
+sns.kdeplot(x=fraud_stat[fraud_stat.category == "shopping_net"].Time)
+plt.title(label = "Internet Shopping Transactions Frauds", fontdict = {"color": "Green", "size": 15, "weight" : "5"})
+plt.xlim(left=0,right=45)
+plt.show()
+
+## Weirdly most frauds are after 8 pm or toward midnight
+
+sns.countplot(fraud_stat.location)
+
+sns.countplot(fraud_stat.gender)
+
+#lets see in broader way in state level
+
+plt.figure(figsize=[10,55])
+sns.countplot(y=fraud_stat.state, hue=fraud_stat.gender)
+
+fraud_cat = fraud_stat.groupby(by = "category").sum()
+sns.barplot(y = fraud_cat.index,x=fraud_cat.amt)
+
+## ratio of fraud 
+
+sns.kdeplot(fraud_stat.amt)
+plt.xlim(left=-10)
+
+fraud_stat.groupby('state')['amt'].mean()
+
+sns.kdeplot(fraud_stat.amt,hue=fraud_stat.gender)
+plt.xlim(left=-10)
+
+## Therefore males are mostly scammed or fraud happens with them
+
+## Now lets build some model to see how it works
+
+# We see that the data is very imbalanced so we need to drop features and remove multicollinearity and remove state wise details
+#so because of class imbalance can raise some unwanted cases.
+
+
+
+
+transactions_df.to_csv('cctransactions.csv')
