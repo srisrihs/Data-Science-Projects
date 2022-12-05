@@ -1,0 +1,480 @@
+import pandas as pd
+import numpy as np
+from sklearn import base
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.linear_model import LinearRegression, SGDRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn import metrics
+import matplotlib.pyplot as plt
+from scipy import stats
+#one-class SVM
+from sklearn import datasets
+dataset = datasets.load_iris()
+np.random.seed(10)
+
+X_train = dataset.data[:,:2] 
+X_test  = np.random.random((10,2))*np.array([6,4])+np.array([3,1]) # fake observations
+
+def plot(arr, c="blue"):
+    plt.scatter(arr[:,0], arr[:,1], s=20, c=c)
+    
+plot(X_train)
+plot(X_test,c="red")
+
+
+from sklearn import svm
+
+clf = svm.OneClassSVM(nu=0.1, kernel="rbf", gamma="auto")
+clf.fit(X_train)
+
+y_pred_test = clf.predict(X_test)
+
+float(sum(y_pred_test==-1))/len(y_pred_test) # proportion of outliers
+
+#In this case, the model labels all of the fake observations as outliers. This doesn't mean that the model is perfect; some of the true observations are also labeled as outliers. When working with low-dimensional data, plotting the decision function and decision boundary can give you a clear picture of what the model is 
+
+xx, yy = np.meshgrid(np.linspace(2.5, 9, 500), np.linspace(0.5, 5, 500))
+Z = clf.decision_function(np.c_[xx.ravel(), yy.ravel()])
+Z = Z.reshape(xx.shape)
+
+plt.contourf(xx, yy, Z, levels=np.linspace(Z.min(), 0, 7), cmap=plt.cm.Blues_r)
+plt.contour(xx, yy, Z, levels=[0], linewidths=2, colors='black')
+
+plot(X_train)
+plot(X_test,c="red")
+
+#Isolation Forest
+
+from sklearn.ensemble import IsolationForest
+
+clf = IsolationForest(max_samples=100, contamination=0.1, random_state=1001)
+clf.fit(X_train)
+
+y_pred_test = clf.predict(X_test)
+
+float(sum(y_pred_test==-1))/len(y_pred_test) # proportion of outliers 
+
+clf.decision_function(X_test)
+
+
+xx, yy = np.meshgrid(np.linspace(2.5, 9, 500), np.linspace(0.5, 5, 500))
+Z = clf.decision_function(np.c_[xx.ravel(), yy.ravel()])
+Z = Z.reshape(xx.shape)
+
+plt.contourf(xx, yy, Z, levels=np.linspace(Z.min(), 0, 7), cmap=plt.cm.Blues_r)
+plt.contour(xx, yy, Z, levels=[0], linewidths=2, colors='black')
+
+plot(X_train)
+plot(X_test,c="red")
+
+counts = pd.read_csv('projects/anomaly/citibike.csv').set_index('date')['count']
+counts.index = pd.to_datetime(counts.index, format='%Y-%m-%d')
+counts.head()
+
+
+counts.plot()
+plt.ylabel('Rides per day');
+
+fft_counts = np.fft.fft(counts - counts.mean())
+yrs = (counts.index[-1] - counts.index[0]).days / 365.
+
+plt.plot(1.0*np.arange(len(fft_counts)) / yrs, np.abs(fft_counts)**2)
+plt.axis([0, 3, 0, 5e13])
+plt.xlabel('Freq (1/yrs)');
+
+plt.plot(1.0*np.arange(len(fft_counts)) / yrs, np.abs(fft_counts)**2)
+
+# Question: There are clear peaks at 12/year and 8/year. What might cause these?
+
+
+class FourierComponents(base.BaseEstimator, base.TransformerMixin):
+    
+    def __init__(self, period):
+        self.period = period
+    
+    def fit(self, X, y=None):
+        self.X0 = X[0]
+        return self
+    
+    def transform(self, X):
+        dt = (X - self.X0).days * 2 * np.pi / self.period
+        return np.c_[np.sin(dt), np.cos(dt)]
+
+pipe = Pipeline([('fourier', FourierComponents(365)),
+                 ('lr', LinearRegression())])
+pipe.fit(counts.index, counts)
+plt.plot(counts.index, counts, counts.index, pipe.predict(counts.index));
+
+np.sqrt(counts.var())
+
+metrics.r2_score(counts, [counts.mean()]*len(counts))
+
+np.sqrt(metrics.mean_squared_error(counts, pipe.predict(counts.index)))
+
+np.sqrt(metrics.mean_squared_error(counts, pipe.predict(counts.index)))
+
+metrics.r2_score(counts, pipe.predict(counts.index))
+
+# Weekly cycle
+
+day_df = pd.DataFrame(
+    {'day': counts.index.dayofweek, 'count': counts.values}
+)
+day_df.groupby('day').mean().plot(kind='bar')
+plt.xticks(range(7), ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
+
+class DayofWeek(base.BaseEstimator, base.TransformerMixin):
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def day_vector(self, day):
+        v = np.zeros(7)
+        v[day] = 1
+        return v
+    
+    def transform(self, X):
+        return np.stack([self.day_vector(d) for d in X.dayofweek])
+
+union = FeatureUnion([('fourier', FourierComponents(365)),
+                      ('dayofweek', DayofWeek())])
+pipe = Pipeline([('union', union),
+                 ('lr', LinearRegression())])
+
+pipe.fit(counts.index, counts)
+print("RMSE:", np.sqrt(metrics.mean_squared_error(counts, pipe.predict(counts.index))))
+print("R^2:", metrics.r2_score(counts, pipe.predict(counts.index)))
+
+plt.plot(counts - pipe.predict(counts.index))
+plt.xticks(rotation=45);
+
+
+class QuadBackground(base.BaseEstimator, base.TransformerMixin):
+    
+    def fit(self, X, y=None):
+        self.X0 = X[0]
+        return self
+    
+    def transform(self, X):
+        days = (X - self.X0).days
+        return np.c_[days, days**2]
+
+union = FeatureUnion([('date', QuadBackground()),
+                      ('fourier', FourierComponents(365)),
+                      ('dayofweek', DayofWeek())])
+pipe = Pipeline([('union', union),
+                 ('lr', LinearRegression())])
+
+pipe.fit(counts.index, counts.values)
+plt.plot(counts - pipe.predict(counts.index))
+plt.xticks(rotation=45);
+
+print("RMSE:", np.sqrt(metrics.mean_squared_error(counts, pipe.predict(counts.index))))
+print("R^2:", metrics.r2_score(counts, pipe.predict(counts.index)))
+
+#Full Model
+
+union = FeatureUnion([('date', QuadBackground()),
+                      ('fourier-y', FourierComponents(365)),
+                      ('fourier-2', FourierComponents(365/2.)),
+                      ('fourier-m', FourierComponents(365/12.)),
+                      ('fourier-8', FourierComponents(365/8.)),
+                      ('dayofweek', DayofWeek())])
+pipe = Pipeline([('union', union),
+                 ('lr', LinearRegression())])
+pipe.fit(counts.index, counts.values)
+print("RMSE:", np.sqrt(metrics.mean_squared_error(counts, pipe.predict(counts.index))))
+print("R^2:", metrics.r2_score(counts, pipe.predict(counts.index)))
+
+residuals = counts - pipe.predict(counts.index)
+plt.plot(residuals)
+plt.xticks(rotation=45);
+
+x = np.linspace(-4, 4, 100)
+dist = stats.norm()
+cols = sns.color_palette()[::2]
+cols = [cols[1], cols[2], cols[0], cols[0], cols[2], cols[1]]
+plt.plot(x, dist.pdf(x))
+for xm in range(-2, 4):
+    x = np.linspace(xm-1, xm, 20)
+    plt.fill_between(x, dist.pdf(x), alpha=0.5, lw=0, facecolor=cols[xm+2])
+plt.xlabel(r'$(x - \mu) / \sigma$');
+
+residuals.hist(bins=50)
+x = np.arange(-30000, 15000, 100)
+dist = stats.norm(scale=residuals.std())
+plt.plot(x, dist.pdf(x) * 45000 / 50. * len(residuals));
+
+z = residuals / residuals.std()
+plt.plot(z)
+plt.ylabel('z-score')
+plt.xticks(rotation=45);
+
+z[z > 2]
+
+z[z < -3.5]
+
+#Moving Averages
+
+from ipywidgets import interact
+
+def plot_rolling(x):
+    
+    def func(window=50):
+        rolling = x.rolling(window=window)
+        plt.plot(x, lw=1)
+        mean = rolling.mean()
+        std = rolling.std()
+        plt.fill_between(mean.index, mean+std, mean-std, facecolor=cols[1], alpha=0.5)
+        plt.plot(rolling.mean())
+        plt.xticks(rotation=45)
+    
+    return func
+
+interact(plot_rolling(residuals), window=(5, 100, 5));
+
+def rolling_z(x, window):
+    roll_mean = x.rolling(window=window).mean().shift(1) # Don't include current data
+    roll_std = x.rolling(window=window).std().shift(1)
+    return (x - roll_mean) / roll_std
+    
+    def plot_rolling_z(x):
+    def func(window=50):
+        plt.plot(rolling_z(x, window))
+        plt.xticks(rotation=45)
+        
+    return func
+
+interact(plot_rolling_z(residuals), window=(5, 100, 5));
+
+
+pd.plotting.autocorrelation_plot(residuals)
+plt.xlim(0, 40);
+
+rolling_z(residuals, 5)[rolling_z(residuals, 5) > 5]
+
+rolling_z(residuals, 5)[rolling_z(residuals, 5) < -10]
+
+def plot_ewm(x):
+    
+    def func(halflife=50):
+        rolling = x.ewm(halflife=halflife)
+        plt.plot(x, lw=1)
+        mean = rolling.mean()
+        std = rolling.std()
+        plt.fill_between(mean.index, mean+std, mean-std, facecolor=cols[1], alpha=0.5)
+        plt.plot(rolling.mean())
+        plt.xticks(rotation=45)
+    
+    return func
+
+interact(plot_ewm(residuals), halflife=(5, 100, 5));
+
+def ewm_z(x, halflife):
+    ewm_mean = x.ewm(halflife=halflife).mean().shift(1) # Don't include current data
+    ewm_std = x.ewm(halflife=halflife).std().shift(1)
+    return (x - ewm_mean) / ewm_std
+    
+    def plot_ewm_z(x):
+    def func(halflife=50):
+        plt.plot(ewm_z(x, halflife))
+        plt.xticks(rotation=45)
+    
+    return func
+
+interact(plot_ewm_z(residuals), halflife=(5, 100, 5));
+
+ewm_z(residuals, 5)[ewm_z(residuals, 5) > 2]
+
+ewm_z(residuals, 5)[ewm_z(residuals, 5) < -4]
+
+counts_df = pd.DataFrame({'counts': counts, 'previous': counts.shift(1).fillna(method='bfill'),
+                          'rolling': counts.rolling(window=5).mean().shift(1).fillna(method='bfill')}) 
+                          
+                          class IndexExtractor(base.BaseEstimator, base.TransformerMixin):
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        return X.index
+
+class ColumnExtractor(base.BaseEstimator, base.TransformerMixin):
+    
+    def __init__(self, cols):
+        self.cols = cols
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        return X[self.cols]
+        
+        
+        time_pipe = Pipeline([('index', IndexExtractor()),
+                      ('features', union)])
+all_union = FeatureUnion([('time_pipe', time_pipe),
+                          ('columns', ColumnExtractor(['previous', 'rolling']))])
+lr_pipe = Pipeline([('all_union', all_union),
+                    ('lr', LinearRegression())])
+                    
+                    lr_pipe.fit(counts_df, counts_df['counts'])
+print("RMSE:", np.sqrt(metrics.mean_squared_error(counts, lr_pipe.predict(counts_df))))
+print("R^2:", metrics.r2_score(counts, lr_pipe.predict(counts_df)))
+
+residuals_window = counts_df['counts'] - lr_pipe.predict(counts_df)
+z_window = residuals_window / residuals_window.std()
+plt.plot(z_window)
+plt.xticks(rotation=45);
+
+z_window[z_window > 2]
+
+z_window[z_window < -3.5]
+
+# Bayesian WORK!!
+
+# Adapted from Ryan P. Adams's Matlab code: http://hips.seas.harvard.edu/content/bayesian-online-changepoint-detection
+
+def bayes_changepoint(X, mu0, sigma0, lambda_):
+    """
+    Perform Bayesian changepoint detection on an input signal X.
+    
+    The underlying distribution is Gaussian.  The Bayesian priors on the mean and standard
+    deviation are mu0 and sigma0.  Run lengths are geometrically distributed with paramater
+    lambda_.  (Equivalently, there is a probability of lambda_ of a new run starting at each
+    time step.)
+    
+    Returns a tuple of three values:
+      1) A matrix of the run length probabilities for each time step.
+      2) A vector of the most probable value of the mean for each time step.
+      3) A vector of the most probably value of the standard deviation for each time step.
+    """
+    T = len(X)
+    R = np.zeros([T+1, T+1])
+    R[0,0] = 1
+    
+    kappa0 = 1
+    alpha0 = 1
+    beta0 = sigma0**2 / 2
+
+    muT = np.array(mu0)
+    kappaT = np.array(kappa0)
+    alphaT = np.array(alpha0)
+    betaT = np.array(beta0)
+
+    mp_mean = np.zeros(T)
+    mp_std = np.zeros(T)
+
+    maxes = np.zeros(T+1)
+    for t in range(T):
+        xt = (X[t] - muT) / np.sqrt(betaT * (kappaT+1) / (alphaT * kappaT))
+        predprobs = stats.t.pdf(xt, 2 * alphaT)
+        H = np.ones(t+1) / lambda_
+
+        R[1:t+2, t+1] =  R[:t+1,t] * predprobs * (1 - H)
+        R[0,     t+1] = (R[:t+1,t] * predprobs * H).sum()
+        R[:,t+1] = R[:,t+1] / R[:,t+1].sum()  # Numerics
+
+        mp = R[:, t+1].argmax()
+
+        muT0 = np.r_[mu0, (kappaT * muT + X[t]) / (kappaT + 1)]
+        kappaT0 = np.r_[kappa0, kappaT + 1]
+        alphaT0 = np.r_[alpha0, alphaT + 0.5]
+        betaT0 = np.r_[beta0, betaT + (kappaT * (X[t] - muT)**2 / (2 * (kappaT + 1)))]
+
+        muT = muT0
+        kappaT = kappaT0
+        alphaT = alphaT0
+        betaT = betaT0
+
+        mp_mean[t] = muT[mp]
+        mp_std[t] = np.sqrt(betaT[mp] * (kappaT[mp] + 1) / (alphaT[mp] * kappaT[mp]))
+    
+    return R, mp_mean, mp_std
+    
+    
+    # Adjust the matplotlib settings for the next graph
+plt.rcParams['axes.axisbelow'] = False
+plt.rcParams['axes.grid'] = False
+
+R, mp_mean, mp_std = bayes_changepoint(residuals_window, 0, residuals_window.std(), 1000)
+#This prevents taking the log of zeroes
+posR = R[:]
+posR[posR == 0] = 1e-10
+plt.imshow(np.log10(posR), vmin=-3, origin='lower')
+plt.colorbar(label=r'$\log_{10} P$')
+plt.plot(residuals_window.values/100 + 900, lw=0.5)
+plt.plot(R.argmax(axis=0), alpha=0.5, c='y')
+plt.axis([0,len(residuals_window),0,len(residuals_window)])
+plt.xlabel('t')
+plt.ylabel('Current run length');
+
+plt.plot(residuals_window, lw=1)
+plt.fill_between(residuals_window.index, mp_mean+mp_std, mp_mean-mp_std, facecolor=cols[1], alpha=0.5)
+plt.plot(residuals_window.index, mp_mean)
+plt.xticks(rotation=45);
+
+plt.plot(residuals_window / mp_std)
+plt.xticks(rotation=45);
+
+
+#Learn  by self
+
+future_dates = pd.date_range('2013-07-01', '2023-07-01', freq='d')
+plt.plot(future_dates, pipe.predict(future_dates));
+
+class PartialFitPipeline(Pipeline):
+    
+    def partial_fit(self, X, y):
+        # Assume that transformers without a partial_fit method can be skipped
+        Xtrans = X
+        for _, step in self.steps[:-1]:
+            if hasattr(step, 'partial_fit'):
+                step.partial_fit(Xtrans, y)
+            Xtrans = step.transform(Xtrans)
+        self.steps[-1][1].partial_fit(Xtrans, y)
+        return self
+
+sgd_pipe = PartialFitPipeline([('all_union', all_union),
+                               ('scaler', StandardScaler()),
+                               ('sgd', SGDRegressor(max_iter=100))])
+                               
+                               
+counts_init = counts.iloc[:700]
+counts_online = counts.iloc[700:]
+counts_init_df = pd.DataFrame({'counts': counts_init,
+                               'previous': counts_init.shift(1).fillna(method='bfill'),
+                               'rolling': counts_init.ewm(halflife=5).mean().shift(1).fillna(method='bfill')}) 
+sgd_pipe.fit(counts_init_df, counts_init_df['counts'])
+
+last_count = counts_init_df['counts'].iloc[-1]
+alpha = 1 - 1./2**5
+ewm = counts_init_df['rolling'].iloc[-1]
+predictions = []
+coefs = []
+
+for date, count in counts_online.iteritems():
+    df = pd.DataFrame({'counts': count, 'previous': last_count, 'rolling': ewm}, index=[date])
+    predictions.append(sgd_pipe.predict(df))
+    sgd_pipe.partial_fit(df, df['counts'])
+    coefs.append(sgd_pipe.named_steps['sgd'].coef_.copy())
+    last_count = count
+    ewm = alpha * count + (1 - alpha) * ewm
+    
+    
+   plt.plot(counts_online, label='data')
+plt.plot(counts_online.index, predictions, label='model')
+plt.legend(loc=4)
+plt.xticks(rotation=45);
+
+plt.plot(coefs);
+
+
+    
+
+
+
+
+
+
+
